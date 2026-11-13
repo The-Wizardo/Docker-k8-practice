@@ -100,5 +100,3 @@ kubectl delete deployment nginx
 10. kubectl delete service nginx
 11. kubectl delete deployment nginx
 ```
-
-**This is your first practical Kubernetes deployment using commands.** You don't need Dockerfile or YAML files for this basic exercise. Later, we'll learn how to deploy the same application using YAML files.
