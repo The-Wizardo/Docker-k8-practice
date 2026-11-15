@@ -339,3 +339,232 @@ Use spaces instead of tabs.
 | `kubectl describe deployment nginx-deployment` | Show Deployment details              |
 | `kubectl delete -f deployment.yaml`            | Delete resources defined in the file |
 
+# **Kubernetes Notes – Service YAML**
+
+## **1. What is a Kubernetes Service?**
+
+A Kubernetes Service is an object that provides a stable network endpoint to access a group of Pods.
+
+**Why do we need a Service?**
+
+- Pods can be deleted and recreated.
+- A recreated Pod may receive a different IP address.
+- A Service provides a stable IP address.
+- A Service forwards traffic to matching Pods using labels and selectors.
+
+## **2. Service YAML Example**
+
+File name: `service.yaml`
+
+```
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: nginx-service
+
+spec:
+  type: NodePort
+
+  selector:
+    app: nginx
+
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+```
+
+## **3. Explanation of Each YAML Tag**
+
+| Tag          | Explanation                                               |
+| ------------ | --------------------------------------------------------- |
+| `apiVersion` | Specifies the Kubernetes API version.                     |
+| `kind`       | Defines the resource type. Here, Service.                 |
+| `metadata`   | Contains resource information.                            |
+| `name`       | Defines the Service name.                                 |
+| `spec`       | Defines the desired Service configuration.                |
+| `type`       | Defines how the Service is exposed.                       |
+| `selector`   | Identifies the Pods that receive traffic.                 |
+| `ports`      | Defines the Service port configuration.                   |
+| `port`       | Port exposed by the Service.                              |
+| `targetPort` | Port on the selected Pod/container where traffic is sent. |
+| `protocol`   | Network protocol, such as TCP or UDP.                     |
+
+## **4. Types of Kubernetes Services**
+
+Kubernetes provides three commonly used Service types.
+
+### **A. ClusterIP**
+
+- Default Service type.
+- Allows communication inside the Kubernetes cluster.
+- Not directly accessible from outside the cluster.
+
+Example:
+
+```
+spec:
+  type: ClusterIP
+```
+
+### **B. NodePort**
+
+- Exposes the application through a port on the Kubernetes node.
+- Kubernetes assigns a port, usually between `30000–32767`.
+- Useful for local testing and basic external access.
+
+Example:
+
+```
+spec:
+  type: NodePort
+```
+
+### **C. LoadBalancer**
+
+- Exposes the application through an external load balancer.
+- Commonly used in cloud environments.
+- Requires a suitable load balancer implementation.
+
+Example:
+
+```
+spec:
+  type: LoadBalancer
+```
+
+### **Comparison**
+
+| Type         | Purpose                        |
+| ------------ | ------------------------------ |
+| ClusterIP    | Internal cluster communication |
+| NodePort     | Access through a node port     |
+| LoadBalancer | External load balancer access  |
+
+## **5. Understand Service Ports**
+
+Example:
+
+```
+ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+```
+
+| Field        | Meaning                                                                                                   |
+| ------------ | --------------------------------------------------------------------------------------------------------- |
+| `port`       | Service listens on port 80.                                                                               |
+| `targetPort` | Traffic is forwarded to port 80 on the selected Pod.                                                      |
+| `protocol`   | Uses TCP communication.                                                                                   |
+| `nodePort`   | Optional explicit port exposed on the node. Kubernetes automatically assigns one for NodePort if omitted. |
+
+### **Traffic flow**
+
+```
+User
+  |
+  v
+NodePort: 30582
+  |
+  v
+Service: Port 80
+  |
+  v
+Pod: TargetPort 80
+  |
+  v
+Nginx Container
+```
+
+## **6. Relationship Between Labels and Selectors**
+
+**Pod labels:**
+
+```
+labels:
+  app: nginx
+```
+
+**Service selector:**
+
+```
+selector:
+  app: nginx
+```
+
+- Label identifies a Pod.
+- Selector finds Pods with matching labels.
+- Service forwards traffic to the matching Pods.
+- If labels don't match, the Service won't select those Pods.
+
+## **7. Important Kubernetes Commands**
+
+| Command                                  | Purpose                          |
+| ---------------------------------------- | -------------------------------- |
+| `kubectl apply -f service.yaml`          | Create or update Service         |
+| `kubectl get services`                   | List Services                    |
+| `kubectl get svc`                        | Short command to list Services   |
+| `kubectl describe service nginx-service` | Show Service details             |
+| `kubectl get endpoints nginx-service`    | Show selected Pod endpoints      |
+| `kubectl get pods --show-labels`         | Display Pod labels               |
+| `kubectl get pods -l app=nginx`          | Find Pods using a label selector |
+| `kubectl delete -f service.yaml`         | Delete Service defined in YAML   |
+
+## **8. Practical Commands We Used**
+
+**Create Deployment:**
+
+```
+kubectl apply -f deployment.yaml
+```
+
+**Create Service:**
+
+```
+kubectl apply -f service.yaml
+```
+
+**Check all resources:**
+
+```
+kubectl get deployments,pods,services
+```
+
+**Check Service endpoints:**
+
+```
+kubectl get endpoints nginx-service
+```
+
+**Access application locally:**
+
+```
+kubectl port-forward service/nginx-service 8080:80
+```
+
+Open:
+
+```
+http://localhost:8080
+```
+
+## **9. Important Concepts to Remember**
+
+1. Deployment manages ReplicaSets.
+2. ReplicaSet maintains the desired number of Pods.
+3. Pods run containers.
+4. Service provides stable network access to Pods.
+5. Labels identify Kubernetes resources.
+6. Selectors find resources using matching labels.
+7. `port` is the Service port.
+8. `targetPort` is the destination port on the Pod.
+9. `nodePort` is the port exposed on the node.
+
+ Notes Completed
+
+**Next lesson: ConfigMap and Secrets**
+
+We'll learn how to store application configuration and sensitive values separately from application code.
+
