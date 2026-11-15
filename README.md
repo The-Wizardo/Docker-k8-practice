@@ -568,3 +568,603 @@ http://localhost:8080
 
 We'll learn how to store application configuration and sensitive values separately from application code.
 
+# Kubernetes Notes – ConfigMap
+
+## 1. What is a ConfigMap?
+
+A ConfigMap is a Kubernetes object used to store non-sensitive application configuration separately from application code and Docker images.
+
+### Examples
+
+- Application name
+- Environment name
+- Application version
+- API URLs
+- Application settings
+
+### Why do we need ConfigMap?
+
+Suppose we have one application running in three environments:
+
+- Development
+- Testing
+- Production
+
+We don't need to create three different Docker images just because the configuration is different.
+
+We can use the same Docker image and provide different configurations through ConfigMaps.
+
+**Main advantage:** We can change application configuration without rebuilding the Docker image.
+
+## 2. How ConfigMap works
+
+```text
+Local config.json
+       |
+       v
+Kubernetes ConfigMap
+       |
+       v
+Deployment
+       |
+       v
+Pod
+       |
+       v
+Container reads config.json
+```
+
+## 3. Create a ConfigMap
+
+### Example: config.json
+
+```json
+{
+    "APP_NAME": "Calculator Application",
+    "ENVIRONMENT": "Development",
+    "APP_VERSION": "1.0",
+    "SUPPORT_EMAIL": "support@example.com"
+}
+```
+
+### Command
+
+```cmd
+kubectl create configmap calculator-config --from-file=config.json
+```
+
+### Explanation
+
+| Command | Explanation |
+|---|---|
+| `kubectl` | Kubernetes command-line tool |
+| `create configmap` | Creates a ConfigMap |
+| `calculator-config` | Name of the ConfigMap |
+| `--from-file` | Reads configuration from a file |
+| `config.json` | Local configuration file |
+
+Expected output:
+
+```text
+configmap/calculator-config created
+```
+
+## 4. Check ConfigMap
+
+### List ConfigMaps
+
+```cmd
+kubectl get configmaps
+```
+
+### View ConfigMap details
+
+```cmd
+kubectl describe configmap calculator-config
+```
+
+### View ConfigMap YAML
+
+```cmd
+kubectl get configmap calculator-config -o yaml
+```
+
+## 5. Mount ConfigMap inside a Pod
+
+To make the ConfigMap available inside our application container, we use a Volume and VolumeMount.
+
+### Deployment YAML
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: calculator-deployment
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: calculator
+
+  template:
+    metadata:
+      labels:
+        app: calculator
+
+    spec:
+      containers:
+        - name: calculator
+          image: my-app:1.0
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - containerPort: 80
+
+          volumeMounts:
+            - name: config-volume
+              mountPath: /usr/share/nginx/html/config.json
+              subPath: config.json
+              readOnly: true
+
+      volumes:
+        - name: config-volume
+          configMap:
+            name: calculator-config
+```
+
+### Explanation of important fields
+
+| Field | Explanation |
+|---|---|
+| `volumes` | Defines the volume available to the Pod |
+| `name` | Name assigned to the volume |
+| `configMap` | Specifies that the volume uses a ConfigMap |
+| `name: calculator-config` | References the existing ConfigMap |
+| `volumeMounts` | Defines where the volume is attached inside the container |
+| `mountPath` | Destination path inside the container |
+| `subPath` | Mounts only the specified file |
+| `readOnly` | Prevents modification through this mount |
+
+### Important paths
+
+Local file:
+
+```text
+config.json
+```
+
+File inside the container:
+
+```text
+/usr/share/nginx/html/config.json
+```
+
+The application can now read the configuration file from the container.
+
+## 6. Verify ConfigMap inside the Pod
+
+First, check the Pod:
+
+```cmd
+kubectl get pods
+```
+
+Then execute the following command:
+
+```cmd
+kubectl exec YOUR-POD-NAME -- cat /usr/share/nginx/html/config.json
+```
+
+### Explanation
+
+| Command | Purpose |
+|---|---|
+| `kubectl exec` | Executes a command inside a container |
+| `YOUR-POD-NAME` | Name of the running Pod |
+| `cat` | Displays the file contents |
+| File path | Location of config.json inside the container |
+
+This verifies that the ConfigMap file is available inside the application container.
+
+## 7. Update an Existing ConfigMap
+
+Suppose we want to change the environment from Development to Production.
+
+### Original configuration
+
+```json
+{
+    "APP_NAME": "Calculator Application",
+    "ENVIRONMENT": "Development",
+    "APP_VERSION": "1.0",
+    "SUPPORT_EMAIL": "support@example.com"
+}
+```
+
+### Updated configuration
+
+```json
+{
+    "APP_NAME": "Calculator Application",
+    "ENVIRONMENT": "Production",
+    "APP_VERSION": "1.0",
+    "SUPPORT_EMAIL": "jawad@example.com"
+}
+```
+
+Save the updated local `config.json`.
+
+### Update the existing ConfigMap
+
+```cmd
+kubectl create configmap calculator-config --from-file=config.json --dry-run=client -o yaml | kubectl apply -f -
+```
+
+### Explanation of the command
+
+| Command part | Purpose |
+|---|---|
+| `create configmap` | Generates a ConfigMap definition |
+| `--from-file=config.json` | Reads the updated local file |
+| `--dry-run=client` | Generates the resource without creating it directly |
+| `-o yaml` | Outputs the generated definition as YAML |
+| `\|` | Passes the generated YAML to the next command |
+| `kubectl apply -f -` | Applies the YAML received through standard input |
+
+This updates the existing ConfigMap instead of creating a duplicate.
+
+Verify:
+
+```cmd
+kubectl describe configmap calculator-config
+```
+
+## 8. Restart Deployment after ConfigMap update
+
+In our practical, we mounted the ConfigMap using `subPath`.
+
+A file mounted using `subPath` does not automatically receive ConfigMap updates.
+
+Therefore, restart the Deployment:
+
+```cmd
+kubectl rollout restart deployment calculator-deployment
+```
+
+Check rollout status:
+
+```cmd
+kubectl rollout status deployment calculator-deployment
+```
+
+Check the Pods:
+
+```cmd
+kubectl get pods
+```
+
+Verify the updated configuration:
+
+```cmd
+kubectl exec YOUR-NEW-POD-NAME -- cat /usr/share/nginx/html/config.json
+```
+
+Expected value:
+
+```json
+"ENVIRONMENT": "Production"
+```
+
+### Important concepts
+
+- Normal ConfigMap volume mounts receive updates eventually.
+- ConfigMap values used as environment variables do not automatically update inside an already-running container.
+- ConfigMap files mounted through `subPath` do not automatically receive updates.
+- Restarting the Deployment creates new Pods that use the updated configuration.
+
+## 9. Important ConfigMap commands
+
+| Command | Purpose |
+|---|---|
+| `kubectl get configmaps` | List ConfigMaps |
+| `kubectl describe configmap calculator-config` | View details |
+| `kubectl get configmap calculator-config -o yaml` | View YAML |
+| `kubectl delete configmap calculator-config` | Delete a ConfigMap |
+| `kubectl rollout restart deployment calculator-deployment` | Restart Deployment |
+| `kubectl get pods` | Check Pods |
+
+---
+
+# Kubernetes Notes – Secret
+
+## 1. What is a Kubernetes Secret?
+
+A Secret is a Kubernetes object intended to store sensitive information.
+
+### Examples
+
+- Database username
+- Database password
+- API keys
+- Authentication tokens
+- Certificates
+- Private keys
+
+Instead of writing passwords directly inside application code, we can store them in a Kubernetes Secret.
+
+**Main advantage:** Sensitive configuration can be managed separately from application code and Docker images.
+
+## 2. Create a Kubernetes Secret
+
+For our practical, we created a Secret named `calculator-secret`.
+
+### Command
+
+```cmd
+kubectl create secret generic calculator-secret --from-literal=DB_USERNAME=admin --from-literal=DB_PASSWORD=MyPassword123
+```
+
+### Explanation
+
+| Command | Explanation |
+|---|---|
+| `kubectl` | Kubernetes command-line tool |
+| `create secret` | Creates a Secret |
+| `generic` | Creates a general-purpose Secret |
+| `calculator-secret` | Name of the Secret |
+| `--from-literal` | Provides key-value data directly |
+| `DB_USERNAME` | Username key |
+| `DB_PASSWORD` | Password key |
+
+Expected output:
+
+```text
+secret/calculator-secret created
+```
+
+## 3. Check Kubernetes Secrets
+
+### List Secrets
+
+```cmd
+kubectl get secrets
+```
+
+### View Secret details
+
+```cmd
+kubectl describe secret calculator-secret
+```
+
+Example output:
+
+```text
+Name: calculator-secret
+Namespace: default
+Type: Opaque
+
+Data
+====
+DB_PASSWORD: 13 bytes
+DB_USERNAME: 5 bytes
+```
+
+Kubernetes displays the size of each value instead of displaying the actual password.
+
+### View Secret YAML
+
+```cmd
+kubectl get secret calculator-secret -o yaml
+```
+
+Example:
+
+```yaml
+apiVersion: v1
+kind: Secret
+
+metadata:
+  name: calculator-secret
+
+type: Opaque
+
+data:
+  DB_USERNAME: YWRtaW4=
+```
+
+The actual values under `data` are Base64 encoded.
+
+## 4. What is Base64 encoding?
+
+Base64 converts data into a different textual representation.
+
+Example:
+
+```text
+Original value: admin
+Base64 value:   YWRtaW4=
+```
+
+Base64 is encoding, not encryption.
+
+Anyone who has permission to read the Secret can decode its values.
+
+### Decode a Secret value in Windows CMD
+
+```cmd
+powershell -Command "[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String((kubectl get secret calculator-secret -o jsonpath='{.data.DB_USERNAME}')))"
+```
+
+Expected output:
+
+```text
+admin
+```
+
+## 5. How Secret reaches an application
+
+There are two common methods:
+
+1. Environment variables
+2. Volume mounts
+
+### Method 1: Environment variables
+
+```text
+Kubernetes Secret
+       |
+       v
+Deployment
+       |
+       v
+Pod environment variables
+       |
+       v
+Application reads the values
+```
+
+### Method 2: Volume Mount
+
+```text
+Kubernetes Secret
+       |
+       v
+Deployment
+       |
+       v
+Pod volume
+       |
+       v
+Secret files inside container
+```
+
+We will practise both methods in the next practical lesson.
+
+## 6. Important Secret commands
+
+| Command | Purpose |
+|---|---|
+| `kubectl get secrets` | List all Secrets |
+| `kubectl get secret calculator-secret` | Get a particular Secret |
+| `kubectl describe secret calculator-secret` | View Secret details |
+| `kubectl get secret calculator-secret -o yaml` | View Secret YAML |
+| `kubectl delete secret calculator-secret` | Delete a Secret |
+
+## 7. Important security rules
+
+1. Never hardcode passwords inside application source code.
+2. Do not commit real passwords or API keys to GitHub.
+3. Restrict Secret access using Kubernetes RBAC.
+4. Enable encryption at rest for Secrets.
+5. Avoid printing Secret values in application logs.
+6. Use proper secret-management solutions for production systems when required.
+
+**Important:** Kubernetes Secret values are Base64 encoded by default. Base64 is not encryption, and Kubernetes does not automatically guarantee encryption at rest.
+
+---
+
+# Kubernetes Notes – Difference Between ConfigMap and Secret
+
+## 1. Main difference
+
+| Feature | ConfigMap | Secret |
+|---|---|---|
+| Purpose | Stores normal configuration | Stores sensitive information |
+| Application name | Yes | No |
+| Environment name | Yes | No |
+| Application version | Yes | No |
+| Database password | No | Yes |
+| API key | No | Yes |
+| Default representation | Plain text | Base64 encoded |
+| Encryption at rest | Not by default | Not by default |
+| Environment variables | Supported | Supported |
+| Volume mounts | Supported | Supported |
+
+## 2. Real-world example
+
+Imagine an application that connects to a database.
+
+| Application configuration | Resource |
+|---|---|
+| Application name | ConfigMap |
+| Environment name | ConfigMap |
+| Application version | ConfigMap |
+| Database URL without credentials | ConfigMap |
+| Database username | Secret |
+| Database password | Secret |
+| API authentication token | Secret |
+
+## 3. Remember this
+
+```text
+ConfigMap = Non-sensitive configuration
+
+Secret = Sensitive configuration
+```
+
+Both ConfigMaps and Secrets can be consumed by Pods through environment variables or volume mounts.
+
+---
+
+# Important concepts to remember
+
+1. ConfigMap stores non-sensitive configuration.
+2. Secret is intended for sensitive information.
+3. Both resources are managed separately from the Docker image.
+4. A Deployment can provide ConfigMap or Secret data to its Pods.
+5. ConfigMaps can be created using local files.
+6. Secrets can be created using literal values or files.
+7. Base64 is encoding, not encryption.
+8. RBAC controls who can access Kubernetes resources.
+9. Updating a ConfigMap does not always update a running application immediately.
+10. A Deployment restart creates new Pods that can consume updated configuration.
+
+---
+
+# Practical Commands – Quick Reference
+
+## ConfigMap
+
+```cmd
+kubectl create configmap calculator-config --from-file=config.json
+
+kubectl get configmaps
+
+kubectl describe configmap calculator-config
+
+kubectl get configmap calculator-config -o yaml
+
+kubectl create configmap calculator-config --from-file=config.json --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl rollout restart deployment calculator-deployment
+```
+
+## Secret
+
+```cmd
+kubectl create secret generic calculator-secret --from-literal=DB_USERNAME=admin --from-literal=DB_PASSWORD=MyPassword123
+
+kubectl get secrets
+
+kubectl describe secret calculator-secret
+
+kubectl get secret calculator-secret -o yaml
+```
+
+---
+
+# Next Lesson – Using Secrets in a Deployment
+
+In the next practical, we will:
+
+1. Add Secret values to the existing Calculator Deployment.
+2. Pass database username and password as environment variables.
+3. Inspect environment variable names inside the Pod.
+4. Understand how an application reads those variables.
+5. Learn the difference between `env` and `envFrom`.
+
+**End of Notes – ConfigMap and Secret**
+
